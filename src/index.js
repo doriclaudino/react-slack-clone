@@ -13,6 +13,8 @@ import { RoomHeader } from './components/RoomHeader'
 import { CreateRoomForm } from './components/CreateRoomForm'
 import { WelcomeScreen } from './components/WelcomeScreen'
 import { JoinRoomScreen } from './components/JoinRoomScreen'
+import Gun from 'gun/gun'
+import Sea from 'gun/sea'
 
 import ChatManager from './chatkit'
 
@@ -57,7 +59,7 @@ class View extends React.Component {
 
     joinRoom: room => {
       this.actions.setRoom(room)
-      this.actions.subscribeToRoom(room)
+      //this.actions.subscribeToRoom(room)
       this.state.messages[room.id] &&
         this.actions.setCursor(
           room.id,
@@ -72,8 +74,15 @@ class View extends React.Component {
         hooks: { onMessage: this.actions.addMessage },
       }),
 
-    createRoom: options =>
-      this.state.user.createRoom(options).then(this.actions.joinRoom),
+    createRoom: options => {
+      console.log(options)
+      const randomId = Math.floor(Math.random() * 4294967296)
+      gun.get(app_key).get('rooms').get(`${options.name}_${randomId}`).put({name:options.name, private:options.private, id:`${options.name}_${randomId}`}, function(ack){
+        console.log(ack)
+      });
+      gun.user().get('rooms').put(`${options.name}_${randomId}`)
+    },
+    
 
     createConvo: options => {
       if (options.user.id !== this.state.user.id) {
@@ -85,10 +94,10 @@ class View extends React.Component {
         exists
           ? this.actions.joinRoom(exists)
           : this.actions.createRoom({
-              name: this.state.user.id + options.user.id,
-              addUserIds: [options.user.id],
-              private: true,
-            })
+            name: this.state.user.id + options.user.id,
+            addUserIds: [options.user.id],
+            private: true,
+          })
       }
     },
 
@@ -101,8 +110,8 @@ class View extends React.Component {
       userId === this.state.user.id
         ? this.state.user.leaveRoom({ roomId })
         : this.state.user
-            .removeUserFromRoom({ userId, roomId })
-            .then(this.actions.setRoom),
+          .removeUserFromRoom({ userId, roomId })
+          .then(this.actions.setRoom),
 
     // --------------------------------------
     // Cursors
@@ -132,9 +141,9 @@ class View extends React.Component {
       }))
       // Update cursor if the message was read
       if (roomId === this.state.room.id) {
-        const cursor = this.state.user.readCursor({ roomId }) || {}
-        const cursorPosition = cursor.position || 0
-        cursorPosition < messageId && this.actions.setCursor(roomId, messageId)
+        //const cursor = this.state.user.readCursor({ roomId }) || {}
+        //const cursorPosition = cursor.position || 0
+        //cursorPosition < messageId && this.actions.setCursor(roomId, messageId)
         this.actions.scrollToEnd()
       }
       // Send notification
@@ -220,19 +229,29 @@ class View extends React.Component {
 
   componentDidMount() {
     'Notification' in window && Notification.requestPermission()
-    existingUser
-      ? ChatManager(this, JSON.parse(existingUser))
-      : fetch('https://chatkit-demo-server.herokuapp.com/auth', {
-          method: 'POST',
-          body: JSON.stringify({ code: authCode }),
-        })
-          .then(res => res.json())
-          .then(user => {
-            user.version = version
-            window.localStorage.setItem('chatkit-user', JSON.stringify(user))
-            window.history.replaceState(null, null, window.location.pathname)
-            ChatManager(this, user)
-          })
+    gunAskUsernameAndPassword(this.actions.setUser);
+
+    gun.get(app_key).get('rooms').on(function(data, id){
+      console.log(data)
+    });
+
+    gun.user().get('rooms').on(function(data, id){
+      console.log(data)
+    });
+
+    // existingUser
+    //   ? ChatManager(this, JSON.parse(existingUser))
+    //   : fetch('https://chatkit-demo-server.herokuapp.com/auth', {
+    //     method: 'POST',
+    //     body: JSON.stringify({ code: authCode }),
+    //   })
+    //     .then(res => res.json())
+    //     .then(user => {
+    //       user.version = version
+    //       window.localStorage.setItem('chatkit-user', JSON.stringify(user))
+    //       window.history.replaceState(null, null, window.location.pathname)
+    //       ChatManager(this, user)
+    //     })
   }
 
   render() {
@@ -285,8 +304,8 @@ class View extends React.Component {
           ) : user.id ? (
             <JoinRoomScreen />
           ) : (
-            <WelcomeScreen />
-          )}
+                <WelcomeScreen />
+              )}
         </section>
       </main>
     )
@@ -297,22 +316,59 @@ class View extends React.Component {
 // Authentication
 // --------------------------------------
 
-window.localStorage.getItem('chatkit-user') &&
-  !window.localStorage.getItem('chatkit-user').match(version) &&
-  window.localStorage.clear()
+ window.localStorage.getItem('chatkit-user') &&
+   !window.localStorage.getItem('chatkit-user').match(version) &&
+   window.localStorage.clear()
 
+const app_key = 'dori_668' 
 const params = new URLSearchParams(window.location.search.slice(1))
 const authCode = params.get('code')
 const existingUser = window.localStorage.getItem('chatkit-user')
+const gun = Gun(['http://localhost:8765/gun', 'https://gunjs.herokuapp.com/gun']);
 
-const githubAuthRedirect = () => {
-  const client = '20cdd317000f92af12fe'
-  const url = 'https://github.com/login/oauth/authorize'
-  const server = 'https://chatkit-demo-server.herokuapp.com'
-  const redirect = `${server}/success?url=${window.location.href.split('?')[0]}`
-  window.location = `${url}?scope=user:email&client_id=${client}&redirect_uri=${redirect}`
+const gunAskUsernameAndPassword = (setUser) => {  
+  const user = gun.user();
+  const username =  'dori66' //window.prompt('username', 'dori66')
+  const password = 'dori66'  //window.prompt('password', 'dori66') 
+
+  if(user.is){return}
+  gun.on('auth', function () {
+    if(user.is){
+      console.log(`user auth completed`)
+      window.localStorage.setItem('chatkit-user', JSON.stringify({id:user.is.alias, version, pub: user.is.pub}))
+      setUser({
+          id:user.is.alias, 
+          name:user.is.alias,
+          avatarURL:'https://thispersondoesnotexist.com/image',
+          version, 
+          pub: user.is.pub, 
+          readCursor:{}, 
+          rooms:[{
+            id:1,
+            name:'Global', 
+            isPrivate:false,
+          users:[{id:user.is.alias,avatarURL:'https://thispersondoesnotexist.com/image', name:'dori1', presence:{state: 'online'}},
+          {id:'dori2', avatarURL:'https://thispersondoesnotexist.com/image', name:'dori2', presence:{ state: undefined}}]
+      },{
+        id:2,
+        name:'WhatsApp', 
+        isPrivate:true,
+        users:[{id:user.is.alias, presence:{state: 'online'}}]
+  }]
+    })      
+    }    
+  });
+
+  try {
+    gun.user().create(username, password, function(createcbk){      
+        gun.user().auth(username, password, function(authcbk){
+          if(authcbk['err'])
+            alert(authcbk['err'])          
+      })
+    })
+  } catch (error) {
+    console.log(error)   
+  }  
 }
 
-!existingUser && !authCode
-  ? githubAuthRedirect()
-  : ReactDOM.render(<View />, document.querySelector('#root'))
+ReactDOM.render(<View />, document.querySelector('#root'))

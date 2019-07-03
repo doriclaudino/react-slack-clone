@@ -17,7 +17,7 @@ const unreads = (user, room, messages = {}) => {
 }
 
 const priority = (user, room, messages = {}) => {
-  const unreadMessages = unreads(user, room, messages) || 0
+  const unreadMessages = 0//unreads(user, room, messages) || 0
   const lastMessage = Object.keys(messages).pop() || 0
   return (10 * unreadMessages + parseInt(lastMessage)) * -1
 }
@@ -37,7 +37,7 @@ export const RoomList = ({
         messageKeys.length > 0 && messages[room.id][messageKeys.pop()]
       const firstUser = room.users.find(x => x.id !== user.id)
       const order = priority(user, room, messages[room.id])
-      const unreadCount = unreads(user, room, messages[room.id])
+      const unreadCount = 6 //unreads(user, room, messages[room.id])
       return (
         <li
           key={room.id}
