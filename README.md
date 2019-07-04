@@ -1,4 +1,4 @@
-# React Slack Clone
+# React Slack Clone - GunDB
 
 [![Star on GitHub][github-star-badge]][github-star]
 [![Tweet][twitter-badge]][twitter]
