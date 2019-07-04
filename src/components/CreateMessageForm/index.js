@@ -2,6 +2,7 @@ import React from 'react'
 import style from './index.module.css'
 import { FileInput } from '../FileInput'
 
+let timeout = 0;
 export const CreateMessageForm = ({
   state: { user = {}, room = {}, message = '' },
   actions: { runCommand },
@@ -19,18 +20,28 @@ export const CreateMessageForm = ({
         }
 
         e.target[0].value = ''
-
+        
         message.startsWith('/')
           ? runCommand(message.slice(1))
           : user.sendMessage({
-              text: message,
-              roomId: room.id,
-            })
+            text: message,
+            roomId: room.id,
+          })
       }}
     >
       <input
         placeholder="Type a Message.."
-        onInput={e => user.isTypingIn({ roomId: room.id })}
+        onBlur={e => {
+          clearTimeout(timeout);
+          user.isNotTyping({ roomId: room.id });
+        }}
+        onInput={e => {
+          timeout = clearTimeout(timeout);
+          user.isTypingIn({ roomId: room.id });          
+          setTimeout(() => {
+            user.isNotTyping({ roomId: room.id });
+          }, 3000);
+        }}
       />
       <FileInput state={{ user, room, message }} />
       <button type="submit">

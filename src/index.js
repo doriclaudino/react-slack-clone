@@ -27,7 +27,7 @@ window.localStorage.getItem('chatkit-user') &&
   !window.localStorage.getItem('chatkit-user').match(version) &&
   window.localStorage.clear()
 
-const app_id = 'dori_app_017'
+const app_id = 'dori_app_20'
 const global_room = 'global_room'
 const params = new URLSearchParams(window.location.search.slice(1))
 const authCode = params.get('code')
@@ -43,7 +43,14 @@ class View extends React.Component {
     user: {
       rooms: {},
       roomSubscriptions: {},
-      isTypingIn: (room) => this.actions.isTyping(room, this.state.user),
+      isTypingIn: ({ roomId }) => {
+        const { id } = this.state.user;
+        gun.get(app_id).get('rooms').get(roomId).get('typings').get(id).put(true)
+      },
+      isNotTyping: ({ roomId }) => {
+        const { id } = this.state.user;
+        gun.get(app_id).get('rooms').get(roomId).get('typings').get(id).put(false)
+      },
       sendMessage: ({ text, roomId }) => {
         const { avatarURL, id, name, presence } = this.state.user;
         console.log(`sendMessage`)
@@ -55,14 +62,25 @@ class View extends React.Component {
       subscribeToRooms: () => {
         gun.user().get('rooms').map().on((data, id) => {
           if (data)
-            this.actions.subscribeToRoom({id})
+            this.actions.subscribeToRoom({ id })
         })
       },
       subscribeToRoom: ({ id: roomId }) => {
         const modifyUser = { ...this.state.user };
         console.log(`subscribeToRoom to ${roomId}`)
-        
-        gun.get(app_id).get('rooms').get(roomId).on((data) => {          
+
+        gun.get(app_id).get('rooms').get(roomId).get('typings').map().on((data, id) => {
+          console.log(id, data)
+          if (id !== this.state.user.id) {
+            if (data) {
+              this.actions.isTyping({ id: roomId }, { id })
+            } else {
+              this.actions.notTyping({ id: roomId }, { id })
+            }
+          }
+        })
+
+        gun.get(app_id).get('rooms').get(roomId).on((data) => {
           const { id, isPrivate, name } = data
           const copyUser = { ...this.state.user }
           copyUser.rooms[roomId] = { id, isPrivate, name, users: {} };
@@ -167,7 +185,7 @@ class View extends React.Component {
 
     createConvo: options => {
       if (options.user.id !== this.state.user.id) {
-        const exists = this.state.user.rooms.find(
+        const exists = Object.keys(this.state.user.rooms).map(key => this.state.user.rooms[key]).find(
           x =>
             x.name === options.user.id + this.state.user.id ||
             x.name === this.state.user.id + options.user.id
@@ -228,7 +246,9 @@ class View extends React.Component {
         this.actions.scrollToEnd()
       }
       // Send notification
-      this.actions.showNotification(payload)
+      const isFreeshMessage = new Date(payload.createdAt).getTime() > new Date(new Date().getTime() - 2000)
+      if (isFreeshMessage)
+        this.actions.showNotification(payload)
     },
 
     runCommand: command => {
@@ -266,16 +286,13 @@ class View extends React.Component {
       }))
     },
 
-    notTyping: (room, user) =>
-      this.setState(prevState => ({
-        typing: {
-          ...prevState.typing,
-          [room.id]: {
-            ...prevState.typing[room.id],
-            [user.id]: false
-          }
-        }
-      })),
+    notTyping: (room, user) => {
+      const copyTyping = { ...this.state.typing }
+      if (copyTyping[room.id] && copyTyping[room.id][user.id]) {
+        delete copyTyping[room.id][user.id]
+        this.setState({ typing: copyTyping })
+      }
+    },
 
     // --------------------------------------
     // Presence
@@ -346,7 +363,7 @@ class View extends React.Component {
       userListOpen,
     } = this.state
     const { createRoom, createConvo, removeUserFromRoom } = this.actions
-    
+    console.log({ typing })
     return (
       <main>
         <aside data-open={sidebarOpen}>
@@ -396,7 +413,7 @@ class View extends React.Component {
 
 const gunAskUsernameAndPassword = async (setUser) => {
   const user = gun.user();
-  const users = ['dori1', 'dori2', 'dori3', 'dori4', 'dori5', 'dori66'];
+  const users = ['dori1', 'dori2', 'dori3'];
   var item = users[Math.floor(Math.random() * users.length)];
 
   const username = item // window.prompt('username', 'dori66')
