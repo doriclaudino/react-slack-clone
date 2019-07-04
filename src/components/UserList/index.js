@@ -6,9 +6,9 @@ export const UserList = ({ room, current, createConvo, removeUser }) => (
     {Object.keys(room.users).map(userKey=> room.users[userKey]).map(user => (
       <li
         key={user.id}
-        className={user.presence.state === 'online' ? style.online : null}
+        className={user.presence ? style.online : null}
         onClick={e => createConvo({ user })}
-        style={{ order: user.presence.state === 'online' && -1 }}
+        style={{ order: user.presence && -1 }}
       >
         <img src={user.avatarURL} alt={user.name} />
         <p>{user.name}</p>

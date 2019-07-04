@@ -15,6 +15,8 @@ import { WelcomeScreen } from './components/WelcomeScreen'
 import { JoinRoomScreen } from './components/JoinRoomScreen'
 import Gun from 'gun/gun'
 import Sea from 'gun/sea'
+import A from 'gun/lib/load'
+import B from 'gun/lib/then'
 
 import ChatManager from './chatkit'
 
@@ -27,7 +29,7 @@ window.localStorage.getItem('chatkit-user') &&
   !window.localStorage.getItem('chatkit-user').match(version) &&
   window.localStorage.clear()
 
-const app_id = 'dori_app_20'
+const app_id = 'dori_app_36'
 const global_room = 'global_room'
 const params = new URLSearchParams(window.location.search.slice(1))
 const authCode = params.get('code')
@@ -43,6 +45,22 @@ class View extends React.Component {
     user: {
       rooms: {},
       roomSubscriptions: {},
+      addPresence: (userId) => {
+        return new Promise((resolve, reject) => {
+          gun.get(app_id).get('userPresence').get('dori1').put(true)
+          gun.get(app_id).get('userPresence').get(userId).put(true, (data) => {
+            if (data.ok)
+              resolve(data)
+            else
+              reject(data.err)
+          })
+        })
+      },
+      removePresence: (userId) => {
+        if (this.state.user && this.state.user.id) {
+          gun.get(app_id).get('userPresence').get(userId).put({ presence: false })
+        }
+      },
       isTypingIn: ({ roomId }) => {
         const { id } = this.state.user;
         gun.get(app_id).get('rooms').get(roomId).get('typings').get(id).put(true)
@@ -52,11 +70,11 @@ class View extends React.Component {
         gun.get(app_id).get('rooms').get(roomId).get('typings').get(id).put(false)
       },
       sendMessage: ({ text, roomId }) => {
-        const { avatarURL, id, name, presence } = this.state.user;
+        const { avatarURL, id, name } = this.state.user;
         console.log(`sendMessage`)
         const randomId = Math.floor(Math.random() * 4294967296)
         const messageId = `${roomId}_${randomId}`
-        gun.get(app_id).get('rooms').get(roomId).get('messages').get(messageId).put({ createdAt: new Date().toString(), text, id: messageId, sender: { avatarURL, id, name, presence } }, function (ack) { console.log(ack) })
+        gun.get(app_id).get('rooms').get(roomId).get('messages').get(messageId).put({ createdAt: new Date().toString(), text, id: messageId, sender: { avatarURL, id, name, presence: false } }, function (ack) { console.log(ack) })
       },
       setReadCursor: () => { return Promise.resolve(0) },
       subscribeToRooms: () => {
@@ -65,12 +83,19 @@ class View extends React.Component {
             this.actions.subscribeToRoom({ id })
         })
       },
+      loadUserPresence: (presentUser) => {
+        return new Promise((resolve, reject) => {
+          gun.get(app_id).get('userPresence').load((data) => {
+            data[presentUser] = true
+            this.setState({ userPresence: data }, resolve(data))
+          })
+        })
+      },
       subscribeToRoom: ({ id: roomId }) => {
         const modifyUser = { ...this.state.user };
         console.log(`subscribeToRoom to ${roomId}`)
 
         gun.get(app_id).get('rooms').get(roomId).get('typings').map().on((data, id) => {
-          console.log(id, data)
           if (id !== this.state.user.id) {
             if (data) {
               this.actions.isTyping({ id: roomId }, { id })
@@ -84,12 +109,19 @@ class View extends React.Component {
           const { id, isPrivate, name } = data
           const copyUser = { ...this.state.user }
           copyUser.rooms[roomId] = { id, isPrivate, name, users: {} };
+          console.log(copyUser.rooms)
           this.actions.setUser(copyUser);
+
+          if (Object.keys(this.state.room).length === 0 && this.state.user.rooms && this.state.user.rooms[global_room]) {
+            this.actions.setRoom(this.state.user.rooms[global_room])
+          }
         })
 
         gun.get(app_id).get('rooms').get(roomId).get('users').map().on((data) => {
-          const { avatarURL, id, name, presence } = data
+          const { avatarURL, id, name } = data
           const copyUser = { ...this.state.user }
+          const presence = this.state.userPresence[id] ? this.state.userPresence[id] : false
+          console.log(`append ${id} presence to ${presence}`)
           copyUser.rooms[roomId].users[id] = { avatarURL, id, name, presence };
           this.actions.setUser(copyUser);
         })
@@ -99,14 +131,18 @@ class View extends React.Component {
           const { id, text, createdAt, sender } = data
           const message = { id, text, createdAt, sender, room: this.state.user.rooms[roomId] }
           gun.get(app_id).get('rooms').get(roomId).get('messages').get(data.id).get('sender').once((senderData) => {
-            const { avatarURL, id, name, presence } = senderData
+            const { avatarURL, id, name } = senderData
+            const presence = this.state.userPresence[id] ? this.state.userPresence[id] : false
             message.sender = { avatarURL, id, name, presence }
+            console.log(`append message ${text} presence to ${presence}`)
+            console.log({ userPresence: this.state.userPresence, id })
             this.actions.addMessage(message)
           })
         })
         modifyUser.roomSubscriptions[roomId] = true
       },
     },
+    userPresence: {},
     room: {},
     messages: {},
     typing: {},
@@ -115,6 +151,23 @@ class View extends React.Component {
   }
 
   actions = {
+    subscribeToUserPresence: () => {
+      gun.get(app_id).get('userPresence').on((data, id) => {
+        delete data['userPresence']
+        const copyUserPresence = { ...this.state.userPresence }
+        copyUserPresence[id] = data
+        this.setState({ userPresence: copyUserPresence })
+      })
+    },
+
+
+    setPresenceList: (userId, presence) => {
+      console.log({ action: 'setPresenceList', userId, presence })
+      const copyUserPresence = { ...this.state.userPresence }
+      copyUserPresence[userId] = presence
+      this.setState({ userPresence: copyUserPresence });
+    },
+
     // --------------------------------------
     // UI
     // --------------------------------------
@@ -326,13 +379,32 @@ class View extends React.Component {
     },
   }
 
+  setupBeforeUnloadListener = (userId) => {
+    window.addEventListener("beforeunload", (ev) => {
+      ev.preventDefault();
+      this.state.user.removePresence(userId);
+    });
+  };
+  control = false
+
   async componentDidMount() {
     'Notification' in window && Notification.requestPermission()
     const user = await gunAskUsernameAndPassword();
+    const presence = await this.state.user.addPresence(user.id)
+    const usersConnected = await this.state.user.loadUserPresence(user.id)
+    console.log({ usersConnected })
+
+
+
     this.actions.setUser(user)
+    this.actions.subscribeToUserRooms(user.id);
+    this.actions.subscribeToUserPresence();
+    //this.setupBeforeUnloadListener(user.id)
+    this.state.user.addPresence()
 
-    this.actions.subscribeToUserRooms();
-
+    //const rooms = await this.state.user.loadRooms()
+    //console.log(rooms)
+    // this.state.user.setPresence()
 
     //roomListener(this.actions.concatRoom, this.actions.concatMessages)
 
@@ -363,7 +435,7 @@ class View extends React.Component {
       userListOpen,
     } = this.state
     const { createRoom, createConvo, removeUserFromRoom } = this.actions
-    console.log({ typing })
+
     return (
       <main>
         <aside data-open={sidebarOpen}>

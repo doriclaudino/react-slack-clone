@@ -31,7 +31,8 @@ export const RoomList = ({
   actions,
 }) => (
   <ul className={style.component}>
-    {Object.keys(rooms).map(key=> rooms[key]).map(room => {
+    {Object.keys(rooms).map(key => {
+      const room = rooms[key]
       const messageKeys = Object.keys(messages[room.id] || {})
       const latestMessage =
         messageKeys.length > 0 && messages[room.id][messageKeys.pop()]
