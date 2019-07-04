@@ -31,11 +31,11 @@ export const RoomList = ({
   actions,
 }) => (
   <ul className={style.component}>
-    {rooms.map(room => {
+    {Object.keys(rooms).map(key=> rooms[key]).map(room => {
       const messageKeys = Object.keys(messages[room.id] || {})
       const latestMessage =
         messageKeys.length > 0 && messages[room.id][messageKeys.pop()]
-      const firstUser = room.users.find(x => x.id !== user.id)
+      const firstUser = Object.keys(room.users).find(key => key !== user.id)
       const order = -1
       const unreadCount = 0 //unreads(user, room, messages[room.id])
       return (

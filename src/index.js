@@ -24,16 +24,15 @@ import ChatManager from './chatkit'
 // --------------------------------------
 
 window.localStorage.getItem('chatkit-user') &&
-!window.localStorage.getItem('chatkit-user').match(version) &&
-window.localStorage.clear()
+  !window.localStorage.getItem('chatkit-user').match(version) &&
+  window.localStorage.clear()
 
-const app_id = 'dori_app_013' 
-const global_room = 'global_room' 
+const app_id = 'dori_app_016'
+const global_room = 'global_room'
 const params = new URLSearchParams(window.location.search.slice(1))
 const authCode = params.get('code')
 const existingUser = window.localStorage.getItem('chatkit-user')
 const gun = Gun(['http://localhost:8765/gun', 'https://gunjs.herokuapp.com/gun']);
-
 
 // --------------------------------------
 // Application
@@ -42,15 +41,58 @@ const gun = Gun(['http://localhost:8765/gun', 'https://gunjs.herokuapp.com/gun']
 class View extends React.Component {
   state = {
     user: {
-      isTypingIn: (room)=>this.actions.isTyping(room, this.state.user),
-      sendMessage: ({text, roomId})=> {
-        const {avatarURL,id,name,presence} = this.state.user;
-        console.log(`sendMessage`)   
+      rooms: {},
+      roomSubscriptions: {},
+      isTypingIn: (room) => this.actions.isTyping(room, this.state.user),
+      sendMessage: ({ text, roomId }) => {
+        const { avatarURL, id, name, presence } = this.state.user;
+        console.log(`sendMessage`)
         const randomId = Math.floor(Math.random() * 4294967296)
-        const messageId = `${roomId}_${randomId}`  
-        gun.get(app_id).get('rooms').get(roomId).get('messages').get(messageId).put({createdAt: new Date().toString(), text, id:messageId, sender:{avatarURL,id,name,presence}}, function(ack){console.log(ack)})
+        const messageId = `${roomId}_${randomId}`
+        gun.get(app_id).get('rooms').get(roomId).get('messages').get(messageId).put({ createdAt: new Date().toString(), text, id: messageId, sender: { avatarURL, id, name, presence } }, function (ack) { console.log(ack) })
       },
-      setReadCursor: ()=>{ return Promise.resolve(0)}
+      setReadCursor: () => { return Promise.resolve(0) },
+      subscribeToRooms: () => {
+        gun.user().get('rooms').map().on((data, id) => {
+          if (data)
+            this.actions.subscribeToRoom({id})
+        })
+      },
+      subscribeToRoom: ({ id: roomId }) => {
+        const modifyUser = { ...this.state.user };
+        console.log({ roomId })
+
+        gun.get(app_id).get('rooms').get(roomId).on((data) => {
+          console.log(`room ${roomId} change`)
+          console.log(data)
+          const { id, isPrivate, name } = data
+          const copyUser = { ...this.state.user }
+          copyUser.rooms[roomId] = { id, isPrivate, name, users: {} };
+          this.actions.setUser(copyUser);
+        })
+
+        gun.get(app_id).get('rooms').get(roomId).get('users').map().on((data) => {
+          const { avatarURL, id, name, presence } = data
+          console.log(`room ${roomId} users change`)
+          console.log(id, data)
+          const copyUser = { ...this.state.user }
+          copyUser.rooms[roomId].users[id] = { avatarURL, id, name, presence };
+          this.actions.setUser(copyUser);
+        })
+
+        gun.get(app_id).get('rooms').get(roomId).get('messages').map().on((data) => {
+          const { id, text, createdAt, sender } = data
+          const message = { id, text, createdAt, sender, room: this.state.user.rooms[roomId] }
+          console.log(`this.actions.addMessage1 ${text}`)
+          gun.get(app_id).get('rooms').get(roomId).get('messages').get(data.id).get('sender').once((senderData) => {
+            const { avatarURL, id, name, presence } = senderData
+            message.sender = { avatarURL, id, name, presence }
+            console.log(`this.actions.addMessage2 ${text}`)
+            this.actions.addMessage(message)
+          })
+        })
+        modifyUser.roomSubscriptions[roomId] = true
+      },
     },
     room: {},
     messages: {},
@@ -72,16 +114,16 @@ class View extends React.Component {
     // --------------------------------------
 
     setUser: (user) => {
-      this.setState({ user: {...this.state.user, ...user} })
+      this.setState({ user: { ...this.state.user, ...user } })
     },
 
     concatRoom: (rooms) => {
-      this.setState({ user: {...this.state.user, rooms: [...new Set([...this.state.user.rooms || [] ,...rooms])]}})
+      this.setState({ user: { ...this.state.user, rooms: [...new Set([...this.state.user.rooms || [], ...rooms])] } })
     },
 
     concatMessages: (messages) => {
       console.log(messages)
-      this.setState({ messages: {...this.state.messages, ...messages }})
+      this.setState({ messages: { ...this.state.messages, ...messages } })
     },
 
     // --------------------------------------
@@ -97,7 +139,7 @@ class View extends React.Component {
 
     joinRoom: room => {
       this.actions.setRoom(room)
-      //this.actions.subscribeToRoom(room)
+      this.actions.subscribeToRoom(room)
       this.state.messages[room.id] &&
         this.actions.setCursor(
           room.id,
@@ -105,21 +147,28 @@ class View extends React.Component {
         )
     },
 
+
+    getUserRooms: () => this.state.user.getRooms(),
+
+
+    subscribeToUserRooms: () => this.state.user.subscribeToRooms(),
+
     subscribeToRoom: room =>
       !this.state.user.roomSubscriptions[room.id] &&
-      this.state.user.subscribeToRoom({
-        roomId: room.id,
-        hooks: { onMessage: this.actions.addMessage },
-      }),
+      this.state.user.subscribeToRoom(room),
 
     createRoom: options => {
       console.log(options)
       const randomId = Math.floor(Math.random() * 4294967296)
       const roomId = `${gun.user().is.alias}_${randomId}`
-      gun.get(app_id).get('rooms').get(roomId).put({name:options.name, id:roomId, isPrivate:options.private, users:{}})
-      gun.get(app_id).get('rooms').get(roomId).get('users').get(gun.user().is.alias).put({id:gun.user().is.alias,avatarURL:`https://robohash.org/${gun.user().is.alias}`, name: gun.user().is.alias, presence:true});   
+      const users = {}
+      users[gun.user().is.alias] = { id: gun.user().is.alias, avatarURL: `https://robohash.org/${gun.user().is.alias}`, name: gun.user().is.alias, presence: true }
+      gun.get(app_id).get('rooms').get(roomId).put({ name: options.name, id: roomId, isPrivate: options.private, users })
+      const rooms = {}
+      rooms[roomId] = true
+      gun.user().get('rooms').put(rooms);
     },
-    
+
 
     createConvo: options => {
       if (options.user.id !== this.state.user.id) {
@@ -210,7 +259,7 @@ class View extends React.Component {
     // Typing Indicators
     // --------------------------------------
 
-    isTyping: (room, user) =>{
+    isTyping: (room, user) => {
       this.setState(prevState => ({
         typing: {
           ...prevState.typing,
@@ -219,7 +268,8 @@ class View extends React.Component {
             [user.id]: true
           }
         }
-      }))},
+      }))
+    },
 
     notTyping: (room, user) =>
       this.setState(prevState => ({
@@ -269,7 +319,10 @@ class View extends React.Component {
     const user = await gunAskUsernameAndPassword();
     this.actions.setUser(user)
 
-    roomListener(this.actions.concatRoom, this.actions.concatMessages)
+    this.actions.subscribeToUserRooms();
+
+
+    //roomListener(this.actions.concatRoom, this.actions.concatMessages)
 
     //globalRoomListener(this.actions.concatRoom)
 
@@ -346,79 +399,43 @@ class View extends React.Component {
   }
 }
 
-
-const roomListener = (concatRoom, concatMessages) =>{
-  let rooms = []
-  gun.get(app_id).get('rooms').map().on(function(data, roomid){
-      delete data['_']     
-      gun.get(app_id).get('rooms').get(roomid).get('users').map().on(function(udata, id){
-        delete udata['_']
-        data['users'] = [].concat(udata)
-        rooms.push(data) 
-       // console.log(rooms)
-        concatRoom(rooms)
-      });   
-      
-      const messages = {}
-      gun.get(app_id).get('rooms').get(roomid).get('messages').map().on(function(mdata, mid){              
-        //console.log(messages)    
-        gun.get(app_id).get('rooms').get(roomid).get('messages').get(mid).get('sender').on(function(sdata, sid){
-          if(messages[roomid] === undefined)
-          messages[roomid] = {}
-          mdata.sender = sdata
-          messages[roomid][mdata.id] = mdata
-          //console.log(messages) 
-          console.log(mdata)
-          concatMessages(messages)
-        });
-        
-      });  
-    });
-
-  
-
-
-  // gun.get(app_id).get('rooms').get(global_room).get('messages').map().once(function(data, id){
-  //   console.log(`messages`)
-  //   console.log(data)
-  // });
-  //concatRoom([globalRoom])
-}
-
-
-const gunAskUsernameAndPassword = async (setUser) => {  
+const gunAskUsernameAndPassword = async (setUser) => {
   const user = gun.user();
-  const username =  'dori66' //window.prompt('username', 'dori66')
-  const password = 'dori66'  //window.prompt('password', 'dori66') 
+  const users = ['dori1', 'dori2', 'dori3', 'dori4', 'dori5', 'dori66'];
+  var item = users[Math.floor(Math.random() * users.length)];
 
-  return new Promise((resolve, reject)=>{
-    gun.user().create(username, password, function(createcbk){      
-      gun.user().auth(username, password, function(authcbk){
-        if(authcbk['err'])
+  const username = item // window.prompt('username', 'dori66')
+  const password = item // window.prompt('password', 'dori66') 
+
+  return new Promise((resolve, reject) => {
+    gun.user().create(username, password, function (createcbk) {
+      gun.user().auth(username, password, function (authcbk) {
+        if (authcbk['err'])
           alert(authcbk['err'])
-        else{
-          window.localStorage.setItem('chatkit-user', JSON.stringify({id:user.is.alias, version, pub: user.is.pub}));
+        else {
+          window.localStorage.setItem('chatkit-user', JSON.stringify({ id: user.is.alias, version, pub: user.is.pub }));
           /**
            * create glogal room
            */
-          gun.get(app_id).get('rooms').get(global_room).put({name:'Global', id:global_room, isPrivate:false, users:{}})
-          gun.get(app_id).get('rooms').get(global_room).get('users').get(gun.user().is.alias).put({id:gun.user().is.alias,avatarURL:`https://robohash.org/${gun.user().is.alias}`, name: gun.user().is.alias, presence:true},function(ack){
-            resolve({                  
-              id:user.is.alias, 
-              name:user.is.alias,
-              avatarURL:`https://robohash.org/${gun.user().is.alias}`,
-              presence:true,
-              version, 
-              pub: user.is.pub, 
-              readCursor:{},
-          })
+          gun.user().get('rooms').put({ global_room: true });
+          gun.get(app_id).get('rooms').get(global_room).put({ name: 'Global', id: global_room, isPrivate: false, users: {} })
+          gun.get(app_id).get('rooms').get(global_room).get('users').get(gun.user().is.alias).put({ id: gun.user().is.alias, avatarURL: `https://robohash.org/${gun.user().is.alias}`, name: gun.user().is.alias, presence: true }, function (ack) {
+            resolve({
+              id: user.is.alias,
+              name: user.is.alias,
+              avatarURL: `https://robohash.org/${gun.user().is.alias}`,
+              presence: true,
+              version,
+              pub: user.is.pub,
+              readCursor: {},
+            })
           });
-        }          
-    })
-  });
+        }
+      })
+    });
   });
 }
 
-  
+
 
 ReactDOM.render(<View />, document.querySelector('#root'))

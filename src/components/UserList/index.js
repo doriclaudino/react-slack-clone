@@ -3,7 +3,7 @@ import style from './index.module.css'
 
 export const UserList = ({ room, current, createConvo, removeUser }) => (
   <ul className={style.component}>
-    {room.users.map(user => (
+    {Object.keys(room.users).map(userKey=> room.users[userKey]).map(user => (
       <li
         key={user.id}
         className={user.presence.state === 'online' ? style.online : null}
