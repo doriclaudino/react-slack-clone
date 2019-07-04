@@ -27,7 +27,7 @@ window.localStorage.getItem('chatkit-user') &&
 !window.localStorage.getItem('chatkit-user').match(version) &&
 window.localStorage.clear()
 
-const app_id = 'dori_app_006' 
+const app_id = 'dori_app_012' 
 const global_room = 'global_room' 
 const params = new URLSearchParams(window.location.search.slice(1))
 const authCode = params.get('code')
@@ -43,7 +43,14 @@ class View extends React.Component {
   state = {
     user: {
       isTypingIn: (room)=>this.actions.isTyping(room, this.state.user),
-      sendMessage: (message)=> console.log(message)
+      sendMessage: ({text, roomId})=> {
+        const {avatarURL,id,name,presence} = this.state.user;
+        console.log(`sendMessage`)   
+        const randomId = Math.floor(Math.random() * 4294967296)
+        const messageId = `${roomId}_${randomId}`  
+        gun.get(app_id).get('rooms').get(roomId).get('messages').get(messageId).put({createdAt: new Date().toString(), text, id:messageId, sender:{avatarURL,id,name,presence}}, function(ack){console.log(ack)})
+      },
+      setReadCursor: ()=>{ return Promise.resolve(0)}
     },
     room: {},
     messages: {},
@@ -68,9 +75,13 @@ class View extends React.Component {
       this.setState({ user: {...this.state.user, ...user} })
     },
 
-
     concatRoom: (rooms) => {
       this.setState({ user: {...this.state.user, rooms: [...new Set([...this.state.user.rooms || [] ,...rooms])]}})
+    },
+
+    concatMessages: (messages) => {
+      console.log(messages)
+      this.setState({ messages: {...this.state.messages, ...messages }})
     },
 
     // --------------------------------------
@@ -105,8 +116,8 @@ class View extends React.Component {
       console.log(options)
       const randomId = Math.floor(Math.random() * 4294967296)
       const roomId = `${gun.user().is.alias}_${randomId}`
-      gun.get(app_id).get('normal_rooms').get(roomId).put({name:options.name, id:roomId, isPrivate:options.private, users:{}})
-      gun.get(app_id).get('normal_rooms').get(roomId).get('users').get(gun.user().is.alias).put({id:gun.user().is.alias,avatarURL:`https://robohash.org/${gun.user().is.alias}`, name: gun.user().is.alias, presence:true});   
+      gun.get(app_id).get('rooms').get(roomId).put({name:options.name, id:roomId, isPrivate:options.private, users:{}})
+      gun.get(app_id).get('rooms').get(roomId).get('users').get(gun.user().is.alias).put({id:gun.user().is.alias,avatarURL:`https://robohash.org/${gun.user().is.alias}`, name: gun.user().is.alias, presence:true});   
     },
     
 
@@ -258,11 +269,7 @@ class View extends React.Component {
     const user = await gunAskUsernameAndPassword();
     this.actions.setUser(user)
 
-    globalRoomListener(this.actions.concatRoom)
-    normalRoomsListener(this.actions.concatRoom)
-
-
-
+    roomListener(this.actions.concatRoom, this.actions.concatMessages)
 
     //globalRoomListener(this.actions.concatRoom)
 
@@ -291,7 +298,7 @@ class View extends React.Component {
       userListOpen,
     } = this.state
     const { createRoom, createConvo, removeUserFromRoom } = this.actions
-    console.log(user)
+    console.log(messages)
     return (
       <main>
         <aside data-open={sidebarOpen}>
@@ -340,33 +347,44 @@ class View extends React.Component {
 }
 
 
-const globalRoomListener = (concatRoom, concatMessages) =>{
-  let globalRoom = {} 
+const roomListener = (concatRoom, concatMessages) =>{
+  let rooms = []
+  gun.get(app_id).get('rooms').map().on(function(data, roomid){
+      delete data['_']     
+      gun.get(app_id).get('rooms').get(roomid).get('users').map().on(function(udata, id){
+        delete udata['_']
+        data['users'] = [].concat(udata)
+        rooms.push(data) 
+       // console.log(rooms)
+        concatRoom(rooms)
+      });   
+      
+      const messages = {}
+      gun.get(app_id).get('rooms').get(roomid).get('messages').map().on(function(mdata, mid){              
+        //console.log(messages)    
+        gun.get(app_id).get('rooms').get(roomid).get('messages').get(mid).get('sender').on(function(sdata, sid){
+          if(messages[roomid] === undefined)
+          messages[roomid] = {}
+          mdata.sender = sdata
+          messages[roomid][mdata.id] = mdata
+          //console.log(messages) 
+          console.log(mdata)
+          concatMessages(messages)
+        });
+        
+      });  
+    });
+
   
-  gun.get(app_id).get(global_room).map().on(function(data, id){
-    globalRoom[id] = data
-    globalRoom['users'] = [] 
-  });
-  gun.get(app_id).get(global_room).get('users').map().once(function(data, id){
-    delete data['_']
-    globalRoom['users'].push(data)
-  });
-  concatRoom([globalRoom])
+
+
+  // gun.get(app_id).get('rooms').get(global_room).get('messages').map().once(function(data, id){
+  //   console.log(`messages`)
+  //   console.log(data)
+  // });
+  //concatRoom([globalRoom])
 }
 
-const normalRoomsListener = async (concatRoom) => {
-  const normalRooms = []
-  gun.get(app_id).get('normal_rooms').map().on(function(data, roomid){
-    delete data['_']     
-    gun.get(app_id).get('normal_rooms').get(roomid).get('users').map().on(function(udata, id){
-      delete udata['_']
-      data['users'] = [].concat(udata)
-      normalRooms.push(data) 
-    });    
-    concatRoom(normalRooms)
-  });
-  
-}
 
 const gunAskUsernameAndPassword = async (setUser) => {  
   const user = gun.user();
@@ -383,12 +401,13 @@ const gunAskUsernameAndPassword = async (setUser) => {
           /**
            * create glogal room
            */
-          gun.get(app_id).get(global_room).put({name:'Global', id:global_room, isPrivate:false, users:{}})
-          gun.get(app_id).get(global_room).get('users').get(gun.user().is.alias).put({id:gun.user().is.alias,avatarURL:`https://robohash.org/${gun.user().is.alias}`, name: gun.user().is.alias, presence:true},function(ack){
+          gun.get(app_id).get('rooms').get(global_room).put({name:'Global', id:global_room, isPrivate:false, users:{}})
+          gun.get(app_id).get('rooms').get(global_room).get('users').get(gun.user().is.alias).put({id:gun.user().is.alias,avatarURL:`https://robohash.org/${gun.user().is.alias}`, name: gun.user().is.alias, presence:true},function(ack){
             resolve({                  
               id:user.is.alias, 
               name:user.is.alias,
               avatarURL:'https://thispersondoesnotexist.com/image',
+              presence:true,
               version, 
               pub: user.is.pub, 
               readCursor:{},

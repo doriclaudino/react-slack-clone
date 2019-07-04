@@ -42,8 +42,7 @@ export const Message = ({ user, createConvo }) => message =>
         <span
           className={
             message.sender.id === user.id ||
-            (message.sender.presence &&
-              message.sender.presence.state === 'online')
+            message.sender.presence 
               ? style.online
               : null
           }
