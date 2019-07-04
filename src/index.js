@@ -27,12 +27,12 @@ window.localStorage.getItem('chatkit-user') &&
   !window.localStorage.getItem('chatkit-user').match(version) &&
   window.localStorage.clear()
 
-const app_id = 'dori_app_016'
+const app_id = 'dori_app_017'
 const global_room = 'global_room'
 const params = new URLSearchParams(window.location.search.slice(1))
 const authCode = params.get('code')
 const existingUser = window.localStorage.getItem('chatkit-user')
-const gun = Gun(['http://localhost:8765/gun', 'https://gunjs.herokuapp.com/gun']);
+const gun = Gun(['http://localhost:8765/gun']);
 
 // --------------------------------------
 // Application
@@ -60,11 +60,9 @@ class View extends React.Component {
       },
       subscribeToRoom: ({ id: roomId }) => {
         const modifyUser = { ...this.state.user };
-        console.log({ roomId })
-
-        gun.get(app_id).get('rooms').get(roomId).on((data) => {
-          console.log(`room ${roomId} change`)
-          console.log(data)
+        console.log(`subscribeToRoom to ${roomId}`)
+        
+        gun.get(app_id).get('rooms').get(roomId).on((data) => {          
           const { id, isPrivate, name } = data
           const copyUser = { ...this.state.user }
           copyUser.rooms[roomId] = { id, isPrivate, name, users: {} };
@@ -73,21 +71,18 @@ class View extends React.Component {
 
         gun.get(app_id).get('rooms').get(roomId).get('users').map().on((data) => {
           const { avatarURL, id, name, presence } = data
-          console.log(`room ${roomId} users change`)
-          console.log(id, data)
           const copyUser = { ...this.state.user }
           copyUser.rooms[roomId].users[id] = { avatarURL, id, name, presence };
           this.actions.setUser(copyUser);
         })
 
         gun.get(app_id).get('rooms').get(roomId).get('messages').map().on((data) => {
+          console.log(`subscribeToRoom to ${roomId} messages`)
           const { id, text, createdAt, sender } = data
           const message = { id, text, createdAt, sender, room: this.state.user.rooms[roomId] }
-          console.log(`this.actions.addMessage1 ${text}`)
           gun.get(app_id).get('rooms').get(roomId).get('messages').get(data.id).get('sender').once((senderData) => {
             const { avatarURL, id, name, presence } = senderData
             message.sender = { avatarURL, id, name, presence }
-            console.log(`this.actions.addMessage2 ${text}`)
             this.actions.addMessage(message)
           })
         })
@@ -351,7 +346,7 @@ class View extends React.Component {
       userListOpen,
     } = this.state
     const { createRoom, createConvo, removeUserFromRoom } = this.actions
-    console.log(messages)
+    
     return (
       <main>
         <aside data-open={sidebarOpen}>
