@@ -29,7 +29,7 @@ window.localStorage.getItem('chatkit-user') &&
   !window.localStorage.getItem('chatkit-user').match(version) &&
   window.localStorage.clear()
 
-const app_id = 'dori_app_36'
+const app_id = 'dori_app_37'
 const global_room = 'global_room'
 const params = new URLSearchParams(window.location.search.slice(1))
 const authCode = params.get('code')
@@ -46,9 +46,10 @@ class View extends React.Component {
       rooms: {},
       roomSubscriptions: {},
       addPresence: (userId) => {
-        return new Promise((resolve, reject) => {
-          gun.get(app_id).get('userPresence').get('dori1').put(true)
+        console.log(`adding userPresence11 ${userId}`)
+        return new Promise((resolve, reject) => {          
           gun.get(app_id).get('userPresence').get(userId).put(true, (data) => {
+            console.log(`adding userPresence22 ${userId}`)
             if (data.ok)
               resolve(data)
             else
@@ -58,7 +59,7 @@ class View extends React.Component {
       },
       removePresence: (userId) => {
         if (this.state.user && this.state.user.id) {
-          gun.get(app_id).get('userPresence').get(userId).put({ presence: false })
+          gun.get(app_id).get('userPresence').get(userId).put(false)
         }
       },
       isTypingIn: ({ roomId }) => {
@@ -83,10 +84,9 @@ class View extends React.Component {
             this.actions.subscribeToRoom({ id })
         })
       },
-      loadUserPresence: (presentUser) => {
+      loadUserPresence: () => {
         return new Promise((resolve, reject) => {
           gun.get(app_id).get('userPresence').load((data) => {
-            data[presentUser] = true
             this.setState({ userPresence: data }, resolve(data))
           })
         })
@@ -151,21 +151,32 @@ class View extends React.Component {
   }
 
   actions = {
-    subscribeToUserPresence: () => {
-      gun.get(app_id).get('userPresence').on((data, id) => {
-        delete data['userPresence']
-        const copyUserPresence = { ...this.state.userPresence }
-        copyUserPresence[id] = data
-        this.setState({ userPresence: copyUserPresence })
+    updateUserChatRoomPresence:()=>{
+      console.log(`updateUserChatRoomPresence`)
+      const copyRooms = {...this.state.user.rooms}
+      Object.keys(copyRooms).map(roomKey=>{
+        Object.keys(copyRooms[roomKey].users).map(userKey=>{
+          Object.keys(this.state.userPresence).map(userPresenceKey=>{
+            if(userPresenceKey === userKey)
+              copyRooms[roomKey].users[userKey].presence = this.state.userPresence[userPresenceKey]
+          })
+        })
       })
+      this.setState(prevState=>({
+        user: {
+          ...prevState.user,
+          rooms: copyRooms
+        }
+      }))
     },
 
-
-    setPresenceList: (userId, presence) => {
-      console.log({ action: 'setPresenceList', userId, presence })
-      const copyUserPresence = { ...this.state.userPresence }
-      copyUserPresence[userId] = presence
-      this.setState({ userPresence: copyUserPresence });
+    subscribeToUserPresence: () => {
+      gun.get(app_id).get('userPresence').on((data, id) => {        
+        delete data['userPresence']
+        const copyUserPresence = { ...this.state.userPresence }
+        Object.keys(data).map(key=>copyUserPresence[key]=data[key])        
+        this.setState({ userPresence: copyUserPresence }, this.actions.updateUserChatRoomPresence)
+      })
     },
 
     // --------------------------------------
@@ -390,17 +401,15 @@ class View extends React.Component {
   async componentDidMount() {
     'Notification' in window && Notification.requestPermission()
     const user = await gunAskUsernameAndPassword();
+    console.log({user})
     const presence = await this.state.user.addPresence(user.id)
-    const usersConnected = await this.state.user.loadUserPresence(user.id)
+    const usersConnected = await this.state.user.loadUserPresence()
     console.log({ usersConnected })
-
-
 
     this.actions.setUser(user)
     this.actions.subscribeToUserRooms(user.id);
     this.actions.subscribeToUserPresence();
-    //this.setupBeforeUnloadListener(user.id)
-    this.state.user.addPresence()
+    this.setupBeforeUnloadListener(user.id)
 
     //const rooms = await this.state.user.loadRooms()
     //console.log(rooms)
