@@ -27,7 +27,7 @@ window.localStorage.getItem('chatkit-user') &&
 !window.localStorage.getItem('chatkit-user').match(version) &&
 window.localStorage.clear()
 
-const app_id = 'dori_app_012' 
+const app_id = 'dori_app_013' 
 const global_room = 'global_room' 
 const params = new URLSearchParams(window.location.search.slice(1))
 const authCode = params.get('code')
@@ -406,7 +406,7 @@ const gunAskUsernameAndPassword = async (setUser) => {
             resolve({                  
               id:user.is.alias, 
               name:user.is.alias,
-              avatarURL:'https://thispersondoesnotexist.com/image',
+              avatarURL:`https://robohash.org/${gun.user().is.alias}`,
               presence:true,
               version, 
               pub: user.is.pub, 
